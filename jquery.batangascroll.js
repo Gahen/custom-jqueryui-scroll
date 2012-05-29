@@ -10,11 +10,12 @@
 
 (function($) {
 	"use strict";
-	$.widget( "btg.scroll", {
+	$.widget( "btg.scroller", {
 
 		// These options will be used as defaults
 		options: { 
-		  clear: null
+			clear: null
+			, orientation: "horizontal"
 		}
 	 
 		// Use the _setOption method to respond to changes to options
@@ -34,95 +35,155 @@
 		// Set up the widget
 		, _create: function() {
 			var self = this;
+			var horiz = self.options.orientation == "horizontal";
+			var dimension = horiz ? "width" : "height";
+			var scrollProp = horiz ? "scrollLeft" : "scrollTop";
+			var orientation = self.options.orientation;
+			if (
+				(horiz && self.element[dimension]() >= self.element.prop("scrollWidth"))
+				|| (!horiz && self.element[dimension]() >= self.element.prop("scrollHeight"))
+				) {
+				console.log(horiz, self.element.outerHeight(), self.element.prop("scrollHeight"), self.element);
+				return false;
+			}
 
 			//scrollpane parts
 			var scrollPane = self.element;
 			var scrollContent = self.element;
 
 			// Inserto el slider
-			var scroll = $('<div class="scroll-bar-wrap ui-widget-content ui-corner-bottom"><div class="scroll-bar"></div></div>');
+			var scroll = self.scroll = $('<div class="scroll-bar-wrap ui-widget-content ui-corner-bottom"></div>');
+
 			scroll.appendTo(scrollPane);
 
 			scroll.css({
 				position: "absolute"
 				, "z-index": "100"
-				, top: 0
+				, bottom: -20
+				, right: -20
+				, width: horiz ? scrollPane.width() : '20'
+				, height: !horiz ? scrollPane.height() : '20'
+				, overflow: "visible"
 			})
 
-			//build slider
-			var scrollbar = scrollPane.find( ".scroll-bar" ).slider({
-				slide: function( event, ui ) {
-					if ( scrollContent.width() > scrollPane.width() ) {
-						scrollContent.css( "margin-left", Math.round(
-							ui.value / 100 * ( scrollPane.width() - scrollContent.width() )
-						) + "px" );
-					} else {
-						scrollContent.css( "margin-left", 0 );
-					}
-				}
-			});
-			
+			self.created = true;
+			self.refresh();
+
+			if (horiz) {
+				self.element.css({
+					marginBottom: parseInt(self.element.css("marginBottom")) + 20
+				});
+			} else {
+				self.element.css({
+					marginRight: parseInt(self.element.css("marginRight")) + 20
+				});
+			}
+
 			//append icon to handle
-			var handleHelper = scrollbar.find( ".ui-slider-handle" )
-			.mousedown(function() {
-				scrollbar.width( handleHelper.width() );
-			})
-			.mouseup(function() {
-				scrollbar.width( "100%" );
-			})
-			.append( "<span class='ui-icon ui-icon-grip-dotted-vertical'></span>" )
+			var handleHelper = scroll.find( ".ui-slider-handle" )
+			.append( "<span class='ui-icon ui-icon-grip-dotted-"+orientation+"'></span>" )
 			.wrap( "<div class='ui-handle-helper-parent'></div>" ).parent();
-			
+
 			//change overflow to hidden now that slider handles the scrolling
 			scrollPane.css( "overflow", "hidden" );
+
+			//init scrollbar size
+			setTimeout( this.resize, 10 );//safari wants a timeout
+
+			//change handle position on window resize
+			$( window ).on("resize", self.resize);
+
+			self.element.on("mousewheel", function(event, delta, deltaX, deltaY) {
+				console.log(scroll.slider("value"), delta, horiz);
+				// En el horizontal voy de 0 a 100, en el otro de 100 a 0
+				if (horiz && delta == -1 && scroll.slider("value") < 100 ||
+					delta == 1 && scroll.slider("value") > 0) {
+					scroll.slider("value", scroll.slider("value") - 5*delta );
+				} else if (!horiz && delta == -1 && scroll.slider("value") > 0 ||
+							delta == 1 && scroll.slider("value") < 100) {
+					self.scroll.slider("value", scroll.slider("value") + 5*delta );
+				} else {
+					self._trigger("scrollend", event);
+				}
+				return false;
+			});
+		}
+
+		, move: function( event, ui ) {
+			var self = this;
+			var horiz = self.options.orientation == "horizontal";
+			var scrollProp = horiz ? "scrollLeft" : "scrollTop";
+			var el = self.element;
+			var dim = horiz ? el.prop("scrollWidth") - el.width() : el.prop("scrollHeight")  - el.height() ;
+			var value = horiz ? (dim*ui.value/100) : (dim*(100-ui.value)/100);
+
+			el[scrollProp](value);
+
+			if (horiz) {
+				self.scroll.css({
+					left: value
+				});
+			} else {
+				self.scroll.css({
+					bottom: -value
+				});
+			}
+		}
+
+		, refresh: function() {
+			var self = this;
+			//build slider
+			if (self.created) {
+				self.scroll.slider("destroy");
+				self.scroll.slider({
+					orientation: self.options.orientation
+					, value: self.options.orientation == "horizontal" ? 0 : 100
+					, change: function(event, ui) {
+						self.move(event, ui);
+					}
+					, slide: function(event, ui) {
+						self.move(event, ui);
+					}
+				});
+			} else {
+				self._create();
+			}
 			
+		}
+		
+		, resize: function() {
 			//size scrollbar and handle proportionally to scroll distance
 			function sizeScrollbar() {
-				var remainder = scrollContent.width() - scrollPane.width();
-				var proportion = remainder / scrollContent.width();
-				var handleSize = scrollPane.width() - ( proportion * scrollPane.width() );
-				scrollbar.find( ".ui-slider-handle" ).css({
-					width: handleSize,
-					"margin-left": -handleSize / 2
-				});
-				handleHelper.width( "" ).width( scrollbar.width() - handleSize );
 			}
 			
 			//reset slider value based on scroll content position
 			function resetValue() {
-				var remainder = scrollPane.width() - scrollContent.width();
-				var leftVal = scrollContent.css( "margin-left" ) === "auto" ? 0 :
-					parseInt( scrollContent.css( "margin-left" ) );
-				var percentage = Math.round( leftVal / remainder * 100 );
-				scrollbar.slider( "value", percentage );
 			}
 			
 			//if the slider is 100% and window gets larger, reveal content
 			function reflowContent() {
-					var showing = scrollContent.width() + parseInt( scrollContent.css( "margin-left" ), 10 );
-					var gap = scrollPane.width() - showing;
-					if ( gap > 0 ) {
-						scrollContent.css( "margin-left", parseInt( scrollContent.css( "margin-left" ), 10 ) + gap );
-					}
 			}
-			
-			//change handle position on window resize
-			$( window ).resize(function() {
-				resetValue();
-				sizeScrollbar();
-				reflowContent();
-			});
-			//init scrollbar size
-			setTimeout( sizeScrollbar, 10 );//safari wants a timeout
-
 		}
 	 
 		// Use the destroy method to clean up any modifications your widget has made to the DOM
 		, destroy: function() {
-		  // In jQuery UI 1.8, you must invoke the destroy method from the base widget
-		  $.Widget.prototype.destroy.call( this );
-		  // In jQuery UI 1.9 and above, you would define _destroy instead of destroy and not call the base method
+			// In jQuery UI 1.8, you must invoke the destroy method from the base widget
+			$.Widget.prototype.destroy.call( this );
+			this.scroll.slider("destroy");
+			this.scroll.remove();
+			$( window ).off("resize", this.resize, this);
+			this.element.off("mousewheel", this._mousewheel);
+			// In jQuery UI 1.9 and above, you would define _destroy instead of destroy and not call the base method
+
 		}
+
+		
+
+		// events bound via _bind are removed automatically
+		// revert other modifications here
+		, _destroy: function() {
+			console.log("_destroy");
+		},
 	});
 })(jQuery);
 
