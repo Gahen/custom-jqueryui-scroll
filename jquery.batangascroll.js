@@ -43,7 +43,6 @@
 				(horiz && self.element[dimension]() >= self.element.prop("scrollWidth"))
 				|| (!horiz && self.element[dimension]() >= self.element.prop("scrollHeight"))
 				) {
-				console.log(horiz, self.element.outerHeight(), self.element.prop("scrollHeight"), self.element);
 				return false;
 			}
 
@@ -55,16 +54,6 @@
 			var scroll = self.scroll = $('<div class="scroll-bar-wrap ui-widget-content ui-corner-bottom"></div>');
 
 			scroll.appendTo(scrollPane);
-
-			scroll.css({
-				position: "absolute"
-				, "z-index": "100"
-				, bottom: -20
-				, right: -20
-				, width: horiz ? scrollPane.width() : '20'
-				, height: !horiz ? scrollPane.height() : '20'
-				, overflow: "visible"
-			})
 
 			self.created = true;
 			self.refresh();
@@ -86,6 +75,8 @@
 
 			//change overflow to hidden now that slider handles the scrolling
 			scrollPane.css( "overflow", "hidden" );
+			// Tengo que forzar el position relative
+			scrollPane.css( "position", "relative" );
 
 			//init scrollbar size
 			setTimeout( this.resize, 10 );//safari wants a timeout
@@ -94,14 +85,14 @@
 			$( window ).on("resize", self.resize);
 
 			self.element.on("mousewheel", function(event, delta, deltaX, deltaY) {
-				console.log(scroll.slider("value"), delta, horiz);
+				var val = scroll.slider("value");
 				// En el horizontal voy de 0 a 100, en el otro de 100 a 0
-				if (horiz && delta == -1 && scroll.slider("value") < 100 ||
-					delta == 1 && scroll.slider("value") > 0) {
-					scroll.slider("value", scroll.slider("value") - 5*delta );
-				} else if (!horiz && delta == -1 && scroll.slider("value") > 0 ||
-							delta == 1 && scroll.slider("value") < 100) {
-					self.scroll.slider("value", scroll.slider("value") + 5*delta );
+				if (horiz && (delta == -1 && val < 100 ||
+					delta == 1 && scroll.slider("value") > 0)) {
+					scroll.slider("value", val - 10*delta );
+				} else if (!horiz && (delta == -1 && val > 0 ||
+							delta == 1 && val < 100)) {
+					scroll.slider("value", val + 10*delta );
 				} else {
 					self._trigger("scrollend", event);
 				}
@@ -114,7 +105,7 @@
 			var horiz = self.options.orientation == "horizontal";
 			var scrollProp = horiz ? "scrollLeft" : "scrollTop";
 			var el = self.element;
-			var dim = horiz ? el.prop("scrollWidth") - el.width() : el.prop("scrollHeight")  - el.height() ;
+			var dim = horiz ? el.prop("scrollWidth") - self.scroll.width() - 20 : el.prop("scrollHeight")  - self.scroll.height() - 20;
 			var value = horiz ? (dim*ui.value/100) : (dim*(100-ui.value)/100);
 
 			el[scrollProp](value);
@@ -132,12 +123,14 @@
 
 		, refresh: function() {
 			var self = this;
+			var horiz = self.options.orientation == "horizontal";
 			//build slider
 			if (self.created) {
+				var rel = self.element.prop("scrollLeft")/self.element.prop("scrollWidth");
 				self.scroll.slider("destroy");
 				self.scroll.slider({
 					orientation: self.options.orientation
-					, value: self.options.orientation == "horizontal" ? 0 : 100
+					, value: horiz ? rel*100 : (100 - rel * 100)
 					, change: function(event, ui) {
 						self.move(event, ui);
 					}
@@ -145,6 +138,16 @@
 						self.move(event, ui);
 					}
 				});
+				self.scroll.css({
+					position: "absolute"
+					, "z-index": "100"
+					, bottom: -20
+					, right: -20
+					, width: horiz ? self.element.width() : '20'
+					, height: !horiz ? self.element.height() : '20'
+					, overflow: "visible"
+				})
+
 			} else {
 				self._create();
 			}
